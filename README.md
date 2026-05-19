@@ -48,6 +48,18 @@ Player              Director API            OpenMatch         Redis        Alloc
 - **Cloudflare Zero Trust Access for the operations dashboard.** Identity verified at the edge via signed JWT, validated by the Director. Email allowlist gates access.
 - **Telemetry via Grafana Alloy.** DaemonSet on every node collects OpenTelemetry traces, metrics, and logs and ships to Grafana Cloud.
 
+## Alternatives considered
+
+- **Primary vs multi region service pool.** The service layer (Director, OpenMatch, Redis) runs only in the primary region. Replicating it per region would fragment the matchmaking pool and require synchronising state across regions; region affinity is handled as an OpenMatch pool filter instead.
+- **Quilkin on a dedicated proxy node pool vs colocated with game servers.** Colocating the proxy with game server pods exposes the gameserver nodes directly to public UDP. The dedicated proxy pool absorbs that traffic, validates HMAC tokens, and drops bad packets before anything reaches the gameservers.
+- **Terraform managed Fleet vs kubectl managed.** The Agones Fleet manages ephemeral, session based game servers that are constantly created, allocated, and torn down, so does not belong in Terraform state with persistent infrastructure. The manifest is applied via kubectl through a dedicated workflow instead.
+- **DOKS vs cheaper providers.** Originally hosted on Vultr for cost, but the managed Kubernetes control plane and LoadBalancer provisioning was unreliable. DOKS trades a small price increase for stable cluster behaviour and reliable UDP LoadBalancers.
+
+## Known limitations
+
+- **Primary region control plane is a single point of failure for new matchmaking.** If the primary region is down, in progress matches in other regions continue but new matchmaking pauses until it recovers. Redis state (SSE channels, OpenMatch tickets) is ephemeral, and stale player session state is cleaned up automatically once the region returns.
+- **No automated cluster failover.** Currently if a regional cluster is unavailable, players are matched into other regions with worse ping. There is no automated drain or detection, removing a region from rotation is a manual operation.
+
 ## Tech stack
 
 | Layer | |
